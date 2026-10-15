@@ -1306,9 +1306,17 @@ class Engine:
             self._rate_t, self._rate_n = wall, self.stats["messages"]
         self._last_write = wall
         tmp = self.state_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.snapshot(), f)
-        os.replace(tmp, self.state_path)
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.snapshot(), f)
+            for _ in range(5):
+                try:
+                    os.replace(tmp, self.state_path)
+                    break
+                except OSError:
+                    time.sleep(0.03)
+        except Exception:
+            pass
 
 
 # --------------------------------------------------------------------------- sources
