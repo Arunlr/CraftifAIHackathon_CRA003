@@ -1,0 +1,61 @@
+# Gaja-Rakshak - elephant early warning for railway tracks / forest-edge villages
+# PipeGen: YOLOv8 COCO-80 (already has an "elephant" class -> no training) + tracker
+project: "Gaja-Rakshak - Elephant Early Warning"
+subtitle: "Rail section cam 07 | PipeGen -> DeepStream -> TensorRT | alerts loco pilot + forest guard"
+source: stdin              # live: --source "mqtt://localhost:1883/#"
+stream:                    # MUST match [streammux] width/height in PipeGen's generated config
+  width: 1920
+  height: 1080
+anchor: bottom_center      # feet/hooves are used for zone tests
+min_confidence: 0.35
+label_aliases:
+  elephant: [elephant]
+  person: [person, Person]
+zones:                     # 0..1 coords - draw your own on a frame with zone_picker.html
+  approach_zone: [[0.0, 0.36], [1.0, 0.30], [1.0, 0.54], [0.0, 0.60]]
+  track_zone:    [[0.0, 0.60], [1.0, 0.54], [1.0, 0.74], [0.0, 0.80]]
+lines:
+  track_centre: [[0.0, 0.70], [1.0, 0.64]]
+rules:
+  - name: elephant_near_track
+    type: zone_enter
+    zone: approach_zone
+    classes: [elephant]
+    seconds: 1
+    severity: warning
+    message: "{count} elephant(s) approaching the track - warn loco pilot to slow down"
+  - name: elephant_on_track
+    type: zone_dwell
+    zone: track_zone
+    classes: [elephant]
+    seconds: 2
+    severity: critical
+    message: "ELEPHANT ON TRACK ({count} in zone, {seconds}s) - STOP trains on this section"
+  - name: person_on_track
+    type: zone_dwell
+    zone: track_zone
+    classes: [person]
+    seconds: 3
+    severity: warning
+    message: "Person on the track for {seconds}s"
+  - name: safe_crossings
+    type: line_cross
+    line: track_centre
+    classes: [elephant]
+    direction_names: {L2R: "forest->village", R2L: "village->forest"}
+perf:                      # verified numbers from PipeGen's TensorRT speed report -> shown on dashboard
+  model: "YOLOv8s (COCO-80)"
+  precision: "FP16: 94 FPS | INT8: 148 FPS"
+  fps: "94.2 (FP16) / 148.6 (INT8)"
+  latency_ms: "10.6 ms (FP16) / 6.7 ms (INT8)"
+  power_w: "42.5 W (FP16) / 28.2 W (INT8)"
+  gpu: "NVIDIA GeForce Laptop (4GB)"
+
+actuator:
+  hold_seconds: 8          # how long a one-shot alert keeps the siren/LED on
+sinks:
+  console: true
+  jsonl: true              # run/events.jsonl
+  mqtt: {enabled: false, host: localhost, port: 1883, topic_prefix: alerts}   # alerts/<rule> + retained alerts/state
+  telegram: {enabled: false, min_interval: 20}   # needs env TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+  serial: {enabled: false, port: COM3, baud: 115200}   # ESP32 running firmgen/ESP32_alert_PRD.md firmware

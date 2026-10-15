@@ -1,0 +1,38 @@
+# ==============================================================================
+# Gaja-Rakshak: Edge MQTT Telemetry Feed Log
+# Source: DeepStream nvmsgbroker (topic: pipegen/detections)
+# Sink: Action Engine Rules Processor -> Alerts & Actuator Output
+# ==============================================================================
+
+--- [MQTT TOPIC: pipegen/detections] (Sample Inbound Perception Frames) ---
+{"version": "4.0", "id": "120", "@timestamp": "2026-10-15T19:54:12.191Z", "sensorId": "cam0", "objects": ["1|230.4|432.0|480.0|658.8|elephant"]}
+{"version": "4.0", "id": "125", "@timestamp": "2026-10-15T19:54:12.691Z", "sensorId": "cam0", "objects": ["1|242.0|440.2|495.2|670.0|elephant", "2|115.2|453.6|268.8|583.2|elephant"]}
+{"version": "4.0", "id": "130", "@timestamp": "2026-10-15T19:54:13.191Z", "sensorId": "cam0", "objects": ["1|729.6|583.2|979.2|810.0|elephant", "2|787.2|756.0|940.8|885.6|elephant"]}
+
+--- [ACTION ENGINE LOG & ACTUATOR DISPATCH] ---
+[engine] Gaja-Rakshak - Elephant Early Warning | source: stdin | zones: approach_zone, track_zone | rules: elephant_near_track, elephant_on_track, person_on_track, safe_crossings
+[20:00:26] WARNING  elephant_near_track: 1 elephant(s) approaching the track - warn loco pilot to slow down
+    >> ACTUATOR WARNING (elephant_near_track)
+[20:00:26] WARNING  elephant_near_track: 2 elephant(s) approaching the track - warn loco pilot to slow down
+[20:00:26] CRITICAL elephant_on_track: ELEPHANT ON TRACK (2 in zone, 2.0s) - STOP trains on this section
+    >> ACTUATOR CRITICAL (elephant_on_track)
+[20:00:26] CRITICAL elephant_on_track: ELEPHANT ON TRACK (2 in zone, 2.0s) - STOP trains on this section
+[20:00:26] CRITICAL elephant_on_track: ELEPHANT ON TRACK (1 in zone, 2.0s) - STOP trains on this section
+[20:00:26] WARNING  elephant_near_track: 1 elephant(s) approaching the track - warn loco pilot to slow down
+[20:00:26] WARNING  person_on_track: Person on the track for 3.0s
+
+[engine] done: 620 messages, 620 frames, 938 detections
+  - elephant_near_track          zone_enter        fired 3
+  - elephant_on_track            zone_dwell        fired 3
+  - person_on_track              zone_dwell        fired 1
+  - safe_crossings               line_cross        fired 0 (L2R 2, R2L 1)
+
+--- [MQTT OUTBOUND ALERTS TOPICS] ---
+Topic: alerts/elephant_near_track
+Payload: {"rule": "elephant_near_track", "severity": "warning", "message": "1 elephant(s) approaching the track - warn loco pilot to slow down", "zone": "approach_zone", "track_id": 1, "timestamp": "2026-10-15T19:54:12.191Z"}
+
+Topic: alerts/elephant_on_track
+Payload: {"rule": "elephant_on_track", "severity": "critical", "message": "ELEPHANT ON TRACK (2 in zone, 2.0s) - STOP trains on this section", "zone": "track_zone", "track_id": 1, "timestamp": "2026-10-15T19:54:13.191Z"}
+
+Topic: alerts/state (RETAINED)
+Payload: {"level": 3, "state": "CRITICAL", "active_rule": "elephant_on_track", "actuator": {"siren": true, "relay": false, "amber_led": false, "red_led": true}, "timestamp": "2026-10-15T19:54:13.191Z"}

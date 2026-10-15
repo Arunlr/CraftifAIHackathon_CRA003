@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zone Picker - PipeGen Action Engine</title>
+<style>
+:root{--bg:#0a0f1e;--panel:#111833;--line:#22305a;--text:#e7ebf7;--muted:#8b95b8;--acc:#38bdf8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,"Segoe UI",Roboto,Ubuntu,sans-serif}
+header{padding:14px 20px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:19px}
+.sub{color:var(--muted);font-size:13px}
+.wrap{display:grid;grid-template-columns:1fr 360px;gap:16px;padding:16px 20px}
+@media(max-width:1000px){.wrap{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+canvas{width:100%;border-radius:8px;background:#000;cursor:crosshair;display:block}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+button,select,input[type=text]{background:#1a2550;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font:inherit}
+button{cursor:pointer}button:hover{border-color:var(--acc)}
+button.primary{background:#0e7490;border-color:#0e7490}
+textarea{width:100%;height:300px;background:#070b17;color:#c7f9cc;border:1px solid var(--line);border-radius:8px;
+font:12px/1.4 ui-monospace,Consolas,monospace;padding:10px}
+.muted{color:var(--muted)}.small{font-size:12px}
+.mode label{margin-right:10px;cursor:pointer}
+ol{padding-left:18px;margin:6px 0}
+kbd{background:#1a2550;border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:12px}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:30px;text-align:center;color:var(--muted)}
+</style></head><body>
+<header><h1>Zone Picker</h1>
+<div class="sub">Draw zones / lines / direction arrows on a frame from YOUR video, then paste the YAML into your config.
+Works offline, nothing is uploaded.</div></header>
+<div class="wrap">
+  <div class="panel">
+    <div class="row">
+      <input type="file" id="file" accept="image/*,video/*">
+      <span class="muted small" id="res"></span>
+    </div>
+    <div class="row" id="vidrow" style="display:none">
+      <input type="range" id="seek" min="0" max="100" step="0.1" value="0" style="flex:1">
+      <span class="muted small" id="tlabel">0.0 s</span>
+    </div>
+    <div id="dropmsg" class="drop">Load a screenshot or the video you will feed to PipeGen (keep the same camera angle).</div>
+    <canvas id="cv" width="1280" height="720" style="display:none"></canvas>
+    <div class="row mode">
+      <b>Draw:</b>
+      <label><input type="radio" name="mode" value="zone" checked> Zone (polygon)</label>
+      <label><input type="radio" name="mode" value="line"> Line (counting)</label>
+      <label><input type="radio" name="mode" value="direction"> Direction arrow</label>
+    </div>
+    <div class="row">
+      <input type="text" id="name" placeholder="name, e.g. track_zone" style="flex:1">
+      <button class="primary" id="finish">Finish shape (Enter)</button>
+      <button id="undo">Undo point (Z)</button>
+      <button id="delshape">Delete last shape</button>
+      <button id="clear">Clear all</button>
+    </div>
+    <div class="muted small">Click to add points. Zones need 3+ points (finish with <kbd>Enter</kbd> or double-click).
+      Lines and arrows finish automatically after 2 points. For lines, the label <b>L&rarr;R</b> means crossing from the left
+      side to the right side of the arrow (as used by <code>direction_names</code>).</div>
+  </div>
+  <div class="panel">
+    <b>YAML for your config</b>
+    <textarea id="out" spellcheck="false"></textarea>
+    <div class="row"><button class="primary" id="copy">Copy YAML</button><span class="muted small" id="copied"></span></div>
+    <div class="muted small">
+      <ol>
+        <li>Set <code>stream: width/height</code> to the <b>[streammux]</b> width/height in the config PipeGen generated
+          (often the same as your video resolution shown above).</li>
+        <li>Zones are tested with each object's <b>bottom-centre</b> (feet / wheels). Use <code>anchor: center</code> for top-down views.</li>
+        <li>Coordinates are 0..1, so they work at any resolution.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+<video id="vid" muted playsinline style="display:none"></video>
+<script>
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const vid = document.getElementById("vid"), seek = document.getElementById("seek");
+let frame = null, shapes = [], cur = [], counters = {zone: 1, line: 1, direction: 1};
+const COLORS = ["#38bdf8", "#f59e0b", "#22c55e", "#ef4444", "#a78bfa", "#f472b6", "#2dd4bf", "#facc15"];
+const mode = () => document.querySelector("input[name=mode]:checked").value;
+
+function showCanvas(w, h) {
+  cv.width = w; cv.height = h;
+  cv.style.display = "block"; document.getElementById("dropmsg").style.display = "none";
+  document.getElementById("res").textContent = `source resolution: ${w} x ${h}`;
+}
+function grab() {
+  const c = document.createElement("canvas"); c.width = cv.width; c.height = cv.height;
+  c.getContext("2d").drawImage(vid, 0, 0, c.width, c.height); frame = c; draw();
+}
+document.getElementById("file").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const url = URL.createObjectURL(f);
+  if (f.type.startsWith("video")) {
+    vid.src = url; document.getElementById("vidrow").style.display = "flex";
+    vid.onloadedmetadata = () => { showCanvas(vid.videoWidth, vid.videoHeight); seek.max = vid.duration.toFixed(1); vid.currentTime = Math.min(0.5, vid.duration / 2); };
+    vid.onseeked = grab;
+  } else {
+    const img = new Image();
+    img.onload = () => { showCanvas(img.naturalWidth, img.naturalHeight); frame = img; draw(); };
+    img.src = url; document.getElementById("vidrow").style.display = "none";
+  }
+});
+seek.addEventListener("input", () => { vid.currentTime = parseFloat(seek.value); document.getElementById("tlabel").textContent = seek.value + " s"; });
+
+function toPx(p) { return [p[0] * cv.width, p[1] * cv.height]; }
+function arrow(a, b, col, lw) {
+  const [x1, y1] = toPx(a), [x2, y2] = toPx(b), ang = Math.atan2(y2 - y1, x2 - x1), hl = 18 * lw / 3;
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - hl * Math.cos(ang - 0.4), y2 - hl * Math.sin(ang - 0.4));
+  ctx.lineTo(x2 - hl * Math.cos(ang + 0.4), y2 - hl * Math.sin(ang + 0.4)); ctx.closePath(); ctx.fill();
+}
+function label(txt, p, col) {
+  const [x, y] = toPx(p), fs = Math.max(14, cv.width / 70);
+  ctx.font = `bold ${fs}px system-ui`; const w = ctx.measureText(txt).width;
+  ctx.fillStyle = "rgba(0,0,0,.65)"; ctx.fillRect(x - 4, y - fs, w + 8, fs + 6);
+  ctx.fillStyle = col; ctx.fillText(txt, x, y);
+}
+function drawShape(s, col, live) {
+  const lw = Math.max(2, cv.width / 400);
+  if (s.kind === "zone") {
+    ctx.beginPath(); s.pts.forEach((p, i) => { const [x, y] = toPx(p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    if (!live) ctx.closePath();
+    ctx.fillStyle = col + "33"; ctx.strokeStyle = col; ctx.lineWidth = lw; if (!live) ctx.fill(); ctx.stroke();
+  } else if (s.pts.length === 2) {
+    arrow(s.pts[0], s.pts[1], col, lw);
+    if (s.kind === "line") {  // mark left / right side of the arrow (right-hand normal = (-dy, dx), y down)
+      const [a, b] = s.pts;
+      const mx = (a[0] + b[0]) / 2 * cv.width, my = (a[1] + b[1]) / 2 * cv.height;
+      const dx = (b[0] - a[0]) * cv.width, dy = (b[1] - a[1]) * cv.height;
+      const n = Math.hypot(dx, dy) || 1, off = 0.04 * cv.width;
+      label("R", [(mx - dy / n * off) / cv.width, (my + dx / n * off) / cv.height], col);
+      label("L", [(mx + dy / n * off) / cv.width, (my - dx / n * off) / cv.height], col);
+    }
+  }
+  s.pts.forEach(p => { const [x, y] = toPx(p); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, lw * 2, 0, 7); ctx.fill(); });
+  if (s.pts.length && s.name) label(s.name, s.pts[0], col);
+}
+function draw() {
+  if (!frame) return;
+  ctx.drawImage(frame, 0, 0, cv.width, cv.height);
+  shapes.forEach((s, i) => drawShape(s, COLORS[i % COLORS.length], false));
+  if (cur.length) drawShape({kind: mode(), pts: cur, name: ""}, "#ffffff", true);
+  output();
+}
+function r3(v) { return Math.round(v * 1000) / 1000; }
+function output() {
+  const sec = (k, title) => {
+    const items = shapes.filter(s => s.kind === k); if (!items.length) return "";
+    return title + ":\n" + items.map(s => `  ${s.name}: [${s.pts.map(p => `[${r3(p[0])}, ${r3(p[1])}]`).join(", ")}]`).join("\n") + "\n";
+  };
+  const txt = sec("zone", "zones") + sec("line", "lines") + sec("direction", "directions");
+  document.getElementById("out").value = (cv.style.display !== "none" ? `stream: {width: ${cv.width}, height: ${cv.height}}   # use PipeGen's [streammux] size if different\n` : "") + (txt || "# draw something on the frame");
+}
+function finish() {
+  const k = mode();
+  if ((k === "zone" && cur.length < 3) || (k !== "zone" && cur.length !== 2)) return;
+  let name = document.getElementById("name").value.trim().replace(/\s+/g, "_");
+  if (!name) name = (k === "zone" ? "zone" : k === "line" ? "line" : "dir") + counters[k]++;
+  shapes.push({kind: k, pts: cur, name}); cur = []; document.getElementById("name").value = ""; draw();
+}
+cv.addEventListener("click", e => {
+  if (!frame) return;
+  const r = cv.getBoundingClientRect();
+  cur.push([(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]);
+  if (mode() !== "zone" && cur.length === 2) finish(); else draw();
+});
+cv.addEventListener("dblclick", e => { e.preventDefault(); if (cur.length > 3) cur.pop(); finish(); });
+document.getElementById("finish").onclick = finish;
+document.getElementById("undo").onclick = () => { cur.pop(); draw(); };
+document.getElementById("delshape").onclick = () => { shapes.pop(); draw(); };
+document.getElementById("clear").onclick = () => { shapes = []; cur = []; draw(); };
+document.querySelectorAll("input[name=mode]").forEach(r => r.onchange = () => { cur = []; draw(); });
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" && e.target.type === "text" && e.key !== "Enter") return;
+  if (e.key === "Enter") { e.preventDefault(); finish(); }
+  if (e.key === "z" || e.key === "Backspace") { if (e.target.tagName !== "INPUT") { cur.pop(); draw(); } }
+});
+document.getElementById("copy").onclick = async () => {
+  const t = document.getElementById("out");
+  try { await navigator.clipboard.writeText(t.value); } catch (err) { t.select(); document.execCommand("copy"); }
+  document.getElementById("copied").textContent = "copied!"; setTimeout(() => document.getElementById("copied").textContent = "", 1500);
+};
+output();
+</script></body></html>

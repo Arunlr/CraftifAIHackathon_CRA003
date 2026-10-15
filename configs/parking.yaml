@@ -1,0 +1,42 @@
+# ParkSense - slot occupancy + fire-lane watch (top-down camera)
+project: "ParkSense - Smart Parking"
+subtitle: "Hospital visitor lot | 8 slots | fire lane | PipeGen + TensorRT"
+source: stdin
+stream: {width: 1920, height: 1080}
+anchor: center             # top-down view -> box centre
+min_confidence: 0.3
+zones:
+  A1: [[0.08, 0.12], [0.29, 0.12], [0.29, 0.40], [0.08, 0.40]]
+  A2: [[0.29, 0.12], [0.50, 0.12], [0.50, 0.40], [0.29, 0.40]]
+  A3: [[0.50, 0.12], [0.71, 0.12], [0.71, 0.40], [0.50, 0.40]]
+  A4: [[0.71, 0.12], [0.92, 0.12], [0.92, 0.40], [0.71, 0.40]]
+  B1: [[0.08, 0.60], [0.29, 0.60], [0.29, 0.88], [0.08, 0.88]]
+  B2: [[0.29, 0.60], [0.50, 0.60], [0.50, 0.88], [0.29, 0.88]]
+  B3: [[0.50, 0.60], [0.71, 0.60], [0.71, 0.88], [0.50, 0.88]]
+  B4: [[0.71, 0.60], [0.92, 0.60], [0.92, 0.88], [0.71, 0.88]]
+  fire_lane: [[0.05, 0.44], [0.95, 0.44], [0.95, 0.56], [0.05, 0.56]]
+rules:
+  - name: lot
+    type: slot_occupancy
+    slots: [A1, A2, A3, A4, B1, B2, B3, B4]
+    classes: [car, truck]
+    seconds: 2
+    severity: warning
+    full_message: "PARKING FULL (0/{total} free) - redirect visitors to overflow lot"
+  - name: fire_lane_blocked
+    type: zone_dwell
+    zone: fire_lane
+    classes: [car, truck]
+    seconds: 10
+    severity: critical
+    message: "{class} #{track_id} blocking the fire lane for {seconds}s"
+perf: {model: "YOLOv8s COCO-80", precision: "FP16 vs INT8", fps: "fill", latency_ms: "fill", power_w: "fill"}
+
+actuator:
+  hold_seconds: 8          # how long a one-shot alert keeps the siren/LED on
+sinks:
+  console: true
+  jsonl: true              # run/events.jsonl
+  mqtt: {enabled: false, host: localhost, port: 1883, topic_prefix: alerts}   # alerts/<rule> + retained alerts/state
+  telegram: {enabled: false, min_interval: 20}   # needs env TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+  serial: {enabled: false, port: COM3, baud: 115200}   # ESP32 running firmgen/ESP32_alert_PRD.md firmware

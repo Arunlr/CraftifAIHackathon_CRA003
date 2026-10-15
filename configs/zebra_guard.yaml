@@ -1,0 +1,63 @@
+# Zebra-Guard - "did the vehicle yield?" at a zebra crossing, from ONE COCO model, zero training
+# pedestrians on the crossing -> amber flashing "STOP - PEDESTRIANS" sign (ESP32 warning)
+# a vehicle keeps moving through while people are on it -> red + buzzer + evidence log (critical)
+project: "Zebra-Guard"
+subtitle: "Zebra crossing | failed-to-yield violations | pedestrians served | PipeGen + TensorRT"
+source: stdin
+stream: {width: 1920, height: 1080}     # MUST match PipeGen's [streammux] width/height
+anchor: bottom_center
+min_confidence: 0.3
+label_aliases:
+  motorcycle: [motorcycle, motorbike, two_wheeler, scooter]
+  person: [person, Person, pedestrian]
+zones:
+  crosswalk: [[0.13, 0.56], [0.87, 0.56], [0.90, 0.66], [0.10, 0.66]]   # draw yours with zone_picker.html
+lines:
+  ped_line: [[0.50, 0.53], [0.50, 0.69]]       # people crossing the road (both directions)
+  vehicle_line: [[0.05, 0.85], [0.95, 0.85]]   # vehicles that passed the crossing
+rules:
+  - name: pedestrians_on_crossing
+    type: count_threshold
+    zone: crosswalk
+    classes: [person]
+    levels: {warning: 1}
+    seconds: 0.5
+    message: "{count} pedestrian(s) on the zebra -> flash STOP sign"
+    clear_message: "Zebra crossing clear"
+  - name: failed_to_yield
+    type: zone_conflict            # vehicle MOVING inside the crosswalk while >= 1 person is on it
+    zone: crosswalk
+    classes: [car, motorcycle, bus, truck, bicycle]
+    protected_classes: [person]
+    min_protected: 1
+    min_movement: 0.03             # normalised distance per `window`; a stopped (yielding) vehicle is fine
+    window: 1.0
+    seconds: 0.3
+    severity: critical
+    message: "NO YIELD: {class} #{track_id} drove through the zebra with {protected} pedestrian(s) on it"
+  - name: pedestrians_served
+    type: line_cross
+    line: ped_line
+    classes: [person]
+    direction_names: {L2R: "right-to-left", R2L: "left-to-right"}
+  - name: vehicles_passed
+    type: line_cross
+    line: vehicle_line
+    classes: [car, motorcycle, bus, truck]
+    direction_names: {L2R: "towards camera", R2L: "away"}
+perf:
+  model: "YOLOv8s COCO-80 + NvDCF tracker"
+  precision: "FP16 vs INT8"
+  fps: "fill from report"
+  latency_ms: "fill"
+  power_w: "fill"
+  gpu: "fill (nvidia-smi)"
+
+actuator:
+  hold_seconds: 5          # red light + buzzer stays on 5 s after a violation
+sinks:
+  console: true
+  jsonl: true              # run/events.jsonl = evidence log (time, class, track id)
+  mqtt: {enabled: false, host: localhost, port: 1883, topic_prefix: alerts}
+  telegram: {enabled: false, min_interval: 20}   # env TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+  serial: {enabled: false, port: COM3, baud: 115200}   # ESP32: amber = people crossing, red+buzzer = violation

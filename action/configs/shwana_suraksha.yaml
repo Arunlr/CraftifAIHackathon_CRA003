@@ -1,0 +1,56 @@
+# Shwana-Suraksha - stray-dog alert at a school gate during dismissal, ONE COCO model (dog, person)
+# 2 dogs at the gate -> warning, 3+ (a pack) -> critical; a dog lingering among children -> warning
+project: "Shwana-Suraksha"
+subtitle: "School gate | stray-dog pack alert at dismissal | PipeGen + TensorRT"
+source: stdin
+stream: {width: 1920, height: 1080}     # MUST match PipeGen's [streammux] width/height
+anchor: bottom_center
+min_confidence: 0.3
+label_aliases:
+  dog: [dog, Dog, stray_dog]
+  person: [person, Person, child]
+zones:
+  gate_area: [[0.30, 0.50], [0.70, 0.50], [0.80, 0.95], [0.20, 0.95]]
+lines:
+  street_line: [[0.85, 0.55], [0.85, 1.0]]    # dogs arriving from / leaving to the street side
+rules:
+  - name: dog_pack_at_gate
+    type: count_threshold
+    zone: gate_area
+    classes: [dog]
+    levels: {warning: 2, critical: 3}
+    seconds: 2
+    message: "{count} stray dogs at the school gate -> {level}"
+    clear_message: "School gate clear of dogs"
+  - name: dog_among_children
+    type: zone_conflict
+    zone: gate_area
+    classes: [dog]
+    protected_classes: [person]
+    protected_label: "children"
+    min_protected: 2
+    min_movement: 0              # standing dogs count too
+    seconds: 3
+    severity: warning
+    message: "Dog #{track_id} among {protected} children at the gate - send the guard"
+  - name: dog_movements
+    type: line_cross
+    line: street_line
+    classes: [dog]
+    direction_names: {L2R: "came from street", R2L: "left to street"}
+perf:
+  model: "YOLOv8s COCO-80 + NvDCF tracker"
+  precision: "FP16 vs INT8"
+  fps: "fill from report"
+  latency_ms: "fill"
+  power_w: "fill"
+  gpu: "fill (nvidia-smi)"
+
+actuator:
+  hold_seconds: 8
+sinks:
+  console: true
+  jsonl: true
+  mqtt: {enabled: false, host: localhost, port: 1883, topic_prefix: alerts}
+  telegram: {enabled: false, min_interval: 20}   # guard / headmaster group
+  serial: {enabled: false, port: COM3, baud: 115200}   # ESP32: amber blink + beep, red + siren for a pack

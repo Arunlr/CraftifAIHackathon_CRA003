@@ -1,0 +1,70 @@
+# Namma Traffic Sentinel - 4 violations from ONE COCO model, zero custom training
+# triple riding (persons on a motorcycle), wrong-way, BMTC bus-lane intrusion, footpath riding
+project: "Namma Traffic Sentinel"
+subtitle: "Junction cam | triple riding | wrong-way | bus lane | footpath | PipeGen + TensorRT"
+source: stdin
+stream: {width: 1920, height: 1080}
+anchor: bottom_center
+min_confidence: 0.3
+label_aliases:
+  motorcycle: [motorcycle, motorbike, two_wheeler, scooter]
+  person: [person, Person, rider]
+zones:
+  road:     [[0.25, 0.22], [0.75, 0.22], [0.97, 1.0], [0.03, 1.0]]
+  bus_lane: [[0.25, 0.22], [0.34, 0.22], [0.24, 1.0], [0.03, 1.0]]
+  footpath: [[0.77, 0.22], [0.90, 0.22], [1.0, 0.45], [1.0, 1.0], [0.99, 1.0]]
+directions:
+  traffic_flow: [[0.5, 0.30], [0.5, 0.90]]   # allowed direction of travel
+lines:
+  count_line: [[0.20, 0.70], [0.85, 0.70]]
+rules:
+  - name: wrong_way
+    type: wrong_way
+    zone: road
+    direction: traffic_flow
+    classes: [car, motorcycle, bus, truck, bicycle]
+    min_distance: 0.06
+    severity: critical
+    message: "WRONG-WAY {class} #{track_id} driving against traffic"
+  - name: triple_riding
+    type: group_on_vehicle
+    vehicle_classes: [motorcycle]
+    rider_classes: [person]
+    min_riders: 3
+    severity: warning
+    message: "TRIPLE RIDING: {riders} people on motorcycle #{track_id}"
+  - name: bus_lane_intrusion
+    type: zone_dwell
+    zone: bus_lane
+    classes: [car, motorcycle, truck]
+    seconds: 3
+    severity: warning
+    message: "{class} #{track_id} in the BMTC bus lane for {seconds}s"
+  - name: footpath_riding
+    type: zone_enter
+    zone: footpath
+    classes: [motorcycle, bicycle, car]
+    seconds: 0.5
+    severity: warning
+    message: "{class} #{track_id} riding on the footpath"
+  - name: vehicle_count
+    type: line_cross
+    line: count_line
+    classes: [car, motorcycle, bus, truck]
+    direction_names: {L2R: inbound, R2L: outbound}
+perf:
+  model: "YOLOv8s COCO-80 + NvDCF tracker"
+  precision: "FP16 vs INT8"
+  fps: "fill from report"
+  latency_ms: "fill"
+  power_w: "fill"
+  gpu: "RTX 3050 Laptop 4GB"
+
+actuator:
+  hold_seconds: 8          # how long a one-shot alert keeps the siren/LED on
+sinks:
+  console: true
+  jsonl: true              # run/events.jsonl
+  mqtt: {enabled: false, host: localhost, port: 1883, topic_prefix: alerts}   # alerts/<rule> + retained alerts/state
+  telegram: {enabled: false, min_interval: 20}   # needs env TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+  serial: {enabled: false, port: COM3, baud: 115200}   # ESP32 running firmgen/ESP32_alert_PRD.md firmware

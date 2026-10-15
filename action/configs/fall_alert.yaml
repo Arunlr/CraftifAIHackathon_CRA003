@@ -1,0 +1,28 @@
+# Dignity-first fall alert - only JSON leaves the device, never video
+project: "SafeNest - Fall Alert"
+subtitle: "Elder living alone | person-down > 3 s | no video leaves the device"
+source: stdin
+stream: {width: 1920, height: 1080}
+anchor: bottom_center
+min_confidence: 0.3
+zones:
+  room: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+rules:
+  - name: fall_detected
+    type: fall
+    zone: room
+    classes: [person]
+    aspect_ratio: 1.15     # box wider than tall (in pixels) = lying down
+    seconds: 3
+    severity: critical
+    message: "FALL: person #{track_id} on the floor for {seconds}s - calling family"
+perf: {model: "YOLOv8s / pose", precision: "FP16 vs INT8", fps: "fill", latency_ms: "fill", power_w: "fill"}
+
+actuator:
+  hold_seconds: 8          # how long a one-shot alert keeps the siren/LED on
+sinks:
+  console: true
+  jsonl: true              # run/events.jsonl
+  mqtt: {enabled: false, host: localhost, port: 1883, topic_prefix: alerts}   # alerts/<rule> + retained alerts/state
+  telegram: {enabled: false, min_interval: 20}   # needs env TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+  serial: {enabled: false, port: COM3, baud: 115200}   # ESP32 running firmgen/ESP32_alert_PRD.md firmware

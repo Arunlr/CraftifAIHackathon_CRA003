@@ -1,0 +1,47 @@
+# Bheed-Kavach - crowd-crush early warning at a stadium / temple / metro gate
+# Calibrate levels: holding-area size in m2 x ~4 persons/m2 = critical (tune on site)
+project: "Bheed-Kavach - Crowd-Crush Early Warning"
+subtitle: "Stadium Gate 3 | density + flow + counter-flow | PipeGen + TensorRT"
+source: stdin
+stream: {width: 1920, height: 1080}
+anchor: bottom_center
+min_confidence: 0.3
+zones:
+  gate_zone: [[0.30, 0.45], [0.70, 0.45], [0.80, 0.95], [0.20, 0.95]]
+lines:
+  gate_line: [[0.75, 0.45], [0.25, 0.45]]    # drawn right->left so "entering" = L2R
+directions:
+  entry_flow: [[0.5, 0.90], [0.5, 0.50]]     # people should move towards the gate
+rules:
+  - name: crowd_density
+    type: count_threshold
+    zone: gate_zone
+    classes: [person]
+    levels: {warning: 18, critical: 30}
+    seconds: 3
+    message: "Gate 3: {count} people in holding area -> {level}. Hold entry, open Gate 5"
+    clear_message: "Gate 3 back to normal ({count} people)"
+  - name: gate_flow
+    type: line_cross
+    line: gate_line
+    classes: [person]
+    direction_names: {L2R: entered, R2L: exited}
+  - name: counter_flow
+    type: wrong_way
+    zone: gate_zone
+    direction: entry_flow
+    classes: [person]
+    min_distance: 0.08
+    cooldown: 10
+    severity: warning
+    message: "Counter-flow: people pushing back against the queue (#{track_id})"
+perf: {model: "YOLOv8s COCO-80 + tracker", precision: "FP16 vs INT8", fps: "fill", latency_ms: "fill", power_w: "fill"}
+
+actuator:
+  hold_seconds: 8          # how long a one-shot alert keeps the siren/LED on
+sinks:
+  console: true
+  jsonl: true              # run/events.jsonl
+  mqtt: {enabled: false, host: localhost, port: 1883, topic_prefix: alerts}   # alerts/<rule> + retained alerts/state
+  telegram: {enabled: false, min_interval: 20}   # needs env TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+  serial: {enabled: false, port: COM3, baud: 115200}   # ESP32 running firmgen/ESP32_alert_PRD.md firmware

@@ -1,0 +1,29 @@
+# Kavach-Press - hand-in-die interlock for power presses (closed loop: PipeGen -> ESP32 relay)
+project: "Kavach-Press - Hand-Safe Power Press"
+subtitle: "Pose keypoints -> danger zone -> ESP32 relay blocks the stroke | PipeGen + FirmGen"
+source: stdin
+stream: {width: 1920, height: 1080}
+anchor: bottom_center
+min_confidence: 0.3
+zones:
+  die_zone: [[0.42, 0.40], [0.58, 0.40], [0.60, 0.62], [0.40, 0.62]]
+rules:
+  - name: press_interlock
+    type: danger_zone
+    zone: die_zone
+    classes: [person]
+    keypoints: [9, 10]     # COCO-17 wrists; if the model has no keypoints the body box is used
+    clear_seconds: 1.0
+    severity: critical
+    message: "PRESS BLOCKED - hand inside die zone (worker #{track_id}, via {via})"
+    clear_message: "Die zone clear - press enabled"
+perf: {model: "YOLOv8s-pose", precision: "FP16 vs INT8", fps: "fill", latency_ms: "fill", power_w: "fill"}
+
+actuator:
+  hold_seconds: 8          # how long a one-shot alert keeps the siren/LED on
+sinks:
+  console: true
+  jsonl: true              # run/events.jsonl
+  mqtt: {enabled: false, host: localhost, port: 1883, topic_prefix: alerts}   # alerts/<rule> + retained alerts/state
+  telegram: {enabled: false, min_interval: 20}   # needs env TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+  serial: {enabled: false, port: COM3, baud: 115200}   # ESP32 running firmgen/ESP32_alert_PRD.md firmware
