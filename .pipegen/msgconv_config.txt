@@ -1,0 +1,21 @@
+# ==============================================================================
+# PipeGen MsgConv Schema Configuration (MQTT metadata format)
+# ==============================================================================
+
+[sensor0]
+id=cam0
+type=Camera
+description="Railway Corridor Mast Cam 07 - KM 482/14"
+location=10.9027,76.9011,0.0
+coordinate=10.9027,76.9011,0.0
+
+[place0]
+id=0
+type=railway_corridor
+name="Madukkarai-Walayar Forest Track Section"
+coordinate=10.9027,76.9011,0.0
+
+[analytics]
+enable=1
+rules-source=action_engine
+schema-version=4.0

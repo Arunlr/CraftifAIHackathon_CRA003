@@ -2,6 +2,13 @@ project_name: "Sentinel-Edge: Intelligence for Existing CCTV"
 version: "1.0.0"
 camera_id: "cam_01"
 
+# Grounded AI Investigator LLM
+llm:
+  provider: "openrouter"
+  api_key: "${OPENROUTER_API_KEY}"
+  model: "openai/gpt-4o-mini"
+
+
 # PipeGen Perception Ingestion
 perception:
   source: "mqtt"                      # options: "mqtt", "jsonl", "simulate", "http"

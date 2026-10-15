@@ -1,0 +1,126 @@
+{
+  "project_name": "Gaja-Rakshak: Railway Elephant Early Warning",
+  "pipegen_version": "0.5.1",
+  "target_platform": {
+    "arch": "x86_64",
+    "os": "Linux / WSL2",
+    "gpu": "NVIDIA GeForce GTX 1650 / RTX 3050 Laptop / Jetson Orin",
+    "cuda_version": "12.2",
+    "tensorrt_version": "8.6.1",
+    "deepstream_version": "7.1"
+  },
+  "pipeline_ir": {
+    "nodes": [
+      {
+        "id": "node_input_0",
+        "name": "nvurisrcbin",
+        "type": "source_decode",
+        "params": {
+          "uri": "file://../media/elephant_crossing_railway.mp4",
+          "codec": "H264",
+          "decoder": "nvv4l2decoder",
+          "surface_format": "NV12"
+        }
+      },
+      {
+        "id": "node_streammux_1",
+        "name": "nvstreammux",
+        "type": "muxer",
+        "params": {
+          "batch_size": 1,
+          "width": 1920,
+          "height": 1080,
+          "batched_push_timeout": 40000,
+          "nvbuf_memory_type": "NVBUF_MEM_CUDA_DEVICE"
+        }
+      },
+      {
+        "id": "node_infer_2",
+        "name": "nvinfer_primary",
+        "type": "tensorrt_inference",
+        "params": {
+          "model_architecture": "YOLOv8s",
+          "dataset": "COCO-80",
+          "classes_of_interest": ["elephant", "person"],
+          "engine_file_fp16": "models/yolov8s_fp16.engine",
+          "engine_file_int8": "models/yolov8s_int8.engine",
+          "input_dims": [1, 3, 640, 640],
+          "confidence_threshold": 0.35,
+          "nms_iou_threshold": 0.45
+        }
+      },
+      {
+        "id": "node_tracker_3",
+        "name": "nvtracker",
+        "type": "multi_object_tracker",
+        "params": {
+          "tracker_type": "NvDCF",
+          "tracker_width": 640,
+          "tracker_height": 384,
+          "display_tracking_id": true,
+          "past_frame_persistence": 30
+        }
+      },
+      {
+        "id": "node_osd_4",
+        "name": "nvdsosd",
+        "type": "on_screen_display",
+        "params": {
+          "font": "Arial",
+          "text_size": 14,
+          "border_width": 3,
+          "show_clock": true
+        }
+      },
+      {
+        "id": "node_tee_5",
+        "name": "tee_splitter",
+        "type": "branch",
+        "params": {
+          "branches": 3
+        }
+      },
+      {
+        "id": "node_msgconv_6",
+        "name": "nvmsgconv_broker",
+        "type": "telemetry_sink",
+        "params": {
+          "protocol": "MQTT",
+          "broker_host": "localhost",
+          "broker_port": 1883,
+          "topic": "pipegen/detections",
+          "payload_format": "DeepStream_Schema_4.0_Minimal"
+        }
+      },
+      {
+        "id": "node_enc_7",
+        "name": "nvv4l2h264enc_filesink",
+        "type": "video_sink",
+        "params": {
+          "container": "MP4",
+          "bitrate": 4000000,
+          "output_path": "../evidence/gaja_rakshak_annotated.mp4"
+        }
+      },
+      {
+        "id": "node_display_8",
+        "name": "nveglglessink",
+        "type": "display_sink",
+        "params": {
+          "sync": true,
+          "window_title": "Gaja-Rakshak Live Rail Sentinel"
+        }
+      }
+    ],
+    "edges": [
+      {"from": "node_input_0", "to": "node_streammux_1"},
+      {"from": "node_streammux_1", "to": "node_infer_2"},
+      {"from": "node_infer_2", "to": "node_tracker_3"},
+      {"from": "node_tracker_3", "to": "node_osd_4"},
+      {"from": "node_osd_4", "to": "node_tee_5"},
+      {"from": "node_tee_5", "to": "node_msgconv_6"},
+      {"from": "node_tee_5", "to": "node_enc_7"},
+      {"from": "node_tee_5", "to": "node_display_8"}
+    ]
+  }
+}

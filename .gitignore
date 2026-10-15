@@ -25,3 +25,8 @@ dist/
 # Keep evidence folder and artifacts intact
 !evidence/*.png
 !evidence/*.txt
+
+# Environment variables & local secrets
+.env
+*.tmp
+*.local

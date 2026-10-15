@@ -25,6 +25,12 @@ class GroundedInvestigator:
         self.alerts_file = Path(alerts_path)
         self.config_path = Path(config_path)
         self.config = self._load_config()
+        self.api_key = os.environ.get("OPENROUTER_API_KEY") or llm_cfg.get("api_key") or ""
+        if self.api_key.startswith("${") and self.api_key.endswith("}"):
+            env_var = self.api_key[2:-1]
+            self.api_key = os.environ.get(env_var, "")
+        self.model = llm_cfg.get("model") or "openai/gpt-4o-mini"
+
 
     def _load_config(self) -> dict:
         if self.config_path.exists():
@@ -391,14 +397,66 @@ class GroundedInvestigator:
 
         # Default fallback: return grounded scene summary
         summary = self.query_summary()
+        base_answer = (
+            f"🔎 **Grounded Query Response**:\n"
+            f"Found {summary['total_detections_recorded']} detections across {summary['unique_tracks_identified']} unique tracks. "
+            f"Active alerts: {summary['total_verified_alerts']}. "
+            f"You can ask: 'What happened?', 'Verify latest threat', 'Is this normal?', or 'Speed report'."
+        )
+
+        llm_briefing = self._call_openrouter(query, json.dumps(summary, indent=2))
+        if llm_briefing:
+            answer = f"{base_answer}\n\n🤖 **AI Operator Briefing (OpenRouter {self.model})**:\n{llm_briefing}"
+        else:
+            answer = base_answer
+
         return {
             "query": query,
             "tool_used": "query_summary()",
-            "answer": (
-                f"🔎 **Grounded Query Response**:\n"
-                f"Found {summary['total_detections_recorded']} detections across {summary['unique_tracks_identified']} unique tracks. "
-                f"Active alerts: {summary['total_verified_alerts']}. "
-                f"You can ask: 'What happened?', 'Verify latest threat', 'Is this normal?', or 'Speed report'."
-            ),
+            "answer": answer,
             "data": summary
         }
+
+    def _call_openrouter(self, query: str, context_str: str) -> Optional[str]:
+        if not self.api_key:
+            return None
+        import urllib.request
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Gaja-Rakshak & Sentinel-Edge AI Safety Investigator. "
+                        "Synthesize telemetry facts into crisp, professional, actionable operator briefings. "
+                        "Ground all statements strictly in the provided data. Do not hallucinate."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"Operator Query: {query}\n\nGround Truth Telemetry:\n{context_str}\n\nProvide 2-3 concise bullet points with recommended operator actions."
+                }
+            ],
+            "max_tokens": 200,
+            "temperature": 0.2
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/Jokimpr/Gaja-Rakshak",
+            "X-Title": "Gaja-Rakshak Sentinel"
+        }
+        try:
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            log.warning("OpenRouter LLM briefing fallback: %s", e)
+            return None
+
