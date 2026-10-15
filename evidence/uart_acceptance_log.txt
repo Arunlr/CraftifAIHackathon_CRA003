@@ -6,36 +6,36 @@
 
 [TEST AC2] Keep-Alive PING Latency (< 20 ms)
   >> PING
-  << PONG (Roundtrip: 0.01 ms)
+  << PONG (Roundtrip: 0.02 ms)
   [PASS] AC2 Verified: PONG received within 20 ms
 
 [TEST AC3] Critical Alert Transition (Level 3 - Elephant on Track)
   >> ALERT 3 elephant_on_track
   << OK ALERT 3
-  << STATE level=3 tag=elephant_on_track t=2
-  Command-to-GPIO Latency: 0.05 ms (NFR1 target: < 50 ms)
+  << STATE level=3 tag=elephant_on_track t=0
+  Command-to-GPIO Latency: 0.09 ms (NFR1 target: < 50 ms)
   [PASS] AC3 Verified: Red LED & Siren active, Relay Interlock tripped LOW
 
 [TEST AC4] Warning Alert Transition (Level 2 - Elephant in Approach Corridor)
   >> ALERT 2 elephant_near_track
   << OK ALERT 2
-  << STATE level=2 tag=elephant_near_track t=2
+  << STATE level=2 tag=elephant_near_track t=0
   [PASS] AC4 Verified: Amber LED 2 Hz blink, 100 ms pulse buzzer
 
 [TEST AC5] Clear Transition
   >> CLEAR corridor_clear
   << OK CLEAR
-  << STATE level=0 tag=corridor_clear t=2
+  << STATE level=0 tag=corridor_clear t=0
   [PASS] AC5 Verified: Green LED ON, Buzzer OFF, Relay Enabled
 
 [TEST AC6] Watchdog Timeout (3.0s Link Lost Fail-Safe)
   Sleeping 3.1s without sending commands...
-  << STATE level=4 tag=timeout t=3102
+  << STATE level=4 tag=timeout t=3101
   [PASS] AC6 Verified: LINK_LOST active, Relay fails safe (LOW), Red flashes 4 Hz
   Recovering link with PING...
   >> PING
   << PONG
-STATE level=0 tag=recovered t=3102
+STATE level=0 tag=recovered t=3101
   [PASS] Recovered to CLEAR
 
 [TEST AC7] Parser Robustness (Invalid commands & overflow)
