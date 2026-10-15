@@ -1293,6 +1293,18 @@ class Engine:
             "alerts_total": sum(r.fired for r in self.rules),
             "alerts_per_min": per_min,
             "events": list(self.events)[:60],
+            "active_objects": [
+                {
+                    "id": t.tid,
+                    "label": t.label,
+                    "box": [round(c, 4) for c in t.box] if t.box else None,
+                    "conf": round(t.conf, 2) if t.conf else None,
+                    "zones": [zn for zn, val in t.zin.items() if val],
+                }
+                for t in self.tracks.values() if t.present
+            ],
+            "zones_config": self.zones,
+            "lines_config": self.geom.get("lines", {}),
         }
 
     def write_state(self, force=False):

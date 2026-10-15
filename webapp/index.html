@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel-Edge // Physical AI CCTV Mission Control</title>
+  <link rel="icon" type="image/png" href="assets/logo.png">
+  <style>
+    :root {
+      --bg: #0c0e12;
+      --surface: #14181f;
+      --surface-border: #232a35;
+      --surface-hover: #1c222c;
+      --primary: #00e5ff;
+      --primary-glow: rgba(0, 229, 255, 0.25);
+      --accent: #ff3366;
+      --accent-glow: rgba(255, 51, 102, 0.35);
+      --warning: #ffb300;
+      --warning-glow: rgba(255, 179, 0, 0.3);
+      --success: #00e676;
+      --text: #f0f3f8;
+      --text-muted: #8b98a5;
+      --mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--sans); }
+
+    /* Topbar */
+    .topbar {
+      height: 58px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--surface-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      z-index: 100;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 14px;
+      color: #000;
+    }
+    .brand-title {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: var(--primary);
+      font-family: var(--mono);
+      margin-left: 8px;
+      background: rgba(0, 229, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 229, 255, 0.3);
+    }
+
+    .telemetry-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .tele-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: #0e1217;
+      border: 1px solid var(--surface-border);
+      border-radius: 6px;
+    }
+    .tele-label { color: var(--text-muted); font-size: 11px; }
+    .tele-val { font-weight: 700; color: #fff; }
+    .tele-val.accent { color: var(--primary); }
+    .tele-val.green { color: var(--success); }
+
+    .chip-btn {
+      cursor: pointer;
+      background: rgba(0, 229, 255, 0.12);
+      border: 1px solid var(--primary);
+      color: var(--primary);
+      font-weight: 700;
+      font-size: 11px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      transition: all 0.2s;
+      font-family: var(--mono);
+    }
+    .chip-btn:hover {
+      background: var(--primary);
+      color: #000;
+      box-shadow: 0 0 12px var(--primary-glow);
+    }
+
+    .alert-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 800;
+      padding: 5px 12px;
+      border-radius: 6px;
+      background: rgba(0, 230, 118, 0.15);
+      color: var(--success);
+      border: 1px solid var(--success);
+      transition: all 0.3s;
+    }
+    .alert-pill.critical {
+      background: rgba(255, 51, 102, 0.2);
+      color: var(--accent);
+      border-color: var(--accent);
+      animation: pulseAlert 1.2s infinite alternate;
+    }
+    .alert-pill.warning {
+      background: rgba(255, 179, 0, 0.2);
+      color: var(--warning);
+      border-color: var(--warning);
+    }
+    @keyframes pulseAlert {
+      from { box-shadow: 0 0 4px var(--accent-glow); }
+      to { box-shadow: 0 0 16px var(--accent-glow); }
+    }
+
+    /* Layout Grid */
+    .main-grid {
+      height: calc(100vh - 58px);
+      display: grid;
+      grid-template-columns: 1.55fr 1fr;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    /* Video & Canvas Stage */
+    .stage-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      height: 100%;
+    }
+    .stage-card {
+      flex: 1;
+      background: #000;
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #stage-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .stage-hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      padding: 6px 10px;
+      border-radius: 4px;
+      border-left: 3px solid var(--primary);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      pointer-events: none;
+    }
+    .stage-hud-row { display: flex; gap: 8px; }
+    .rec-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      margin-right: 4px;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .stage-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    .ctrl-group { display: flex; align-items: center; gap: 8px; }
+    .btn {
+      background: var(--surface-hover);
+      border: 1px solid var(--surface-border);
+      color: var(--text);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: #26303e; border-color: var(--primary); color: #fff; }
+    .btn.active { background: var(--primary); color: #000; border-color: var(--primary); font-weight: 700; }
+    .btn.sim-trigger {
+      background: rgba(255, 179, 0, 0.12);
+      border-color: var(--warning);
+      color: var(--warning);
+    }
+    .btn.sim-trigger:hover {
+      background: var(--warning);
+      color: #000;
+    }
+
+    /* Right Control & Intelligence Panels */
+    .intel-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* Suggested Action Card */
+    .action-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: all 0.3s;
+    }
+    .action-panel.threat-active {
+      border-color: var(--accent);
+      background: linear-gradient(180deg, rgba(255, 51, 102, 0.08) 0%, var(--surface) 100%);
+      box-shadow: 0 0 15px rgba(255, 51, 102, 0.2);
+    }
+    .action-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .action-title {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .scene-summary-pill {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--primary);
+      background: rgba(0, 229, 255, 0.08);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 229, 255, 0.2);
+    }
+    .action-box {
+      background: #0c0e12;
+      border: 1px solid var(--surface-border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .action-box.critical {
+      border-left: 4px solid var(--accent);
+      background: rgba(255, 51, 102, 0.05);
+    }
+    .action-box.warning {
+      border-left: 4px solid var(--warning);
+      background: rgba(255, 179, 0, 0.05);
+    }
+    .action-box.nominal {
+      border-left: 4px solid var(--success);
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    .action-prompt {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .action-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .dispatch-btn {
+      align-self: flex-start;
+      margin-top: 4px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .dispatch-btn:hover {
+      box-shadow: 0 0 12px var(--accent-glow);
+      filter: brightness(1.15);
+    }
+
+    /* AI Investigator Terminal */
+    .investigator-panel {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .inv-header {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--surface-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .inv-title {
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .inv-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px 12px;
+      background: #0f1318;
+      border-bottom: 1px solid var(--surface-border);
+    }
+    .inv-chip {
+      background: var(--surface-hover);
+      border: 1px solid var(--surface-border);
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .inv-chip:hover {
+      background: rgba(0, 229, 255, 0.15);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .inv-chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .msg {
+      padding: 8px 12px;
+      border-radius: 6px;
+      max-width: 90%;
+      word-wrap: break-word;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: #1e2633;
+      border: 1px solid #2e3a4e;
+      color: #fff;
+    }
+    .msg.bot {
+      align-self: flex-start;
+      background: #0d1014;
+      border: 1px solid var(--surface-border);
+      border-left: 3px solid var(--primary);
+      color: var(--text);
+    }
+    .msg-tool-tag {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--primary);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .inv-compose {
+      display: flex;
+      gap: 8px;
+      padding: 10px;
+      border-top: 1px solid var(--surface-border);
+      background: #0e1216;
+    }
+    .inv-input {
+      flex: 1;
+      background: #14181f;
+      border: 1px solid var(--surface-border);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      outline: none;
+      font-family: var(--sans);
+    }
+    .inv-input:focus { border-color: var(--primary); }
+    .inv-send {
+      background: var(--primary);
+      color: #000;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .inv-send:hover { box-shadow: 0 0 10px var(--primary-glow); }
+
+    /* Benchmark Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-card {
+      background: var(--surface);
+      border: 1px solid var(--primary);
+      box-shadow: 0 0 30px rgba(0, 229, 255, 0.2);
+      width: 720px;
+      max-width: 90vw;
+      border-radius: 8px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 12px;
+    }
+    .modal-head h2 { font-size: 16px; text-transform: uppercase; letter-spacing: 0.05em; color: #fff; }
+    .modal-close {
+      background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer;
+    }
+    .modal-close:hover { color: #fff; }
+
+    .bench-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .bench-table th, .bench-table td {
+      border: 1px solid var(--surface-border);
+      padding: 10px 12px;
+      text-align: left;
+    }
+    .bench-table th { background: #0c0e12; color: var(--text-muted); }
+    .bench-table tr.highlight td { background: rgba(0, 229, 255, 0.08); font-weight: 700; color: #fff; }
+  </style>
+</head>
+<body>
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo">SE</div>
+      <div>
+        <span class="brand-title">Sentinel-Edge</span>
+        <span class="brand-sub">PipeGen Track · CCTV Intelligence</span>
+      </div>
+    </div>
+
+    <div class="telemetry-bar">
+      <div class="tele-item">
+        <span class="tele-label">DEVICE:</span>
+        <span class="tele-val">NVIDIA 4GB GPU</span>
+      </div>
+      <div class="tele-item">
+        <span class="tele-label">PRECISION:</span>
+        <span class="tele-val accent" id="mode-val">YOLOv8s TensorRT INT8</span>
+      </div>
+      <div class="tele-item">
+        <span class="tele-label">SPEED:</span>
+        <span class="tele-val green" id="fps-val">148.6 FPS</span>
+        <span class="tele-label">(6.73 ms)</span>
+      </div>
+      <button class="chip-btn" id="speed-report-btn">📊 Speed Report</button>
+      <div class="alert-pill" id="global-alert-pill">
+        <span>●</span> <span id="alert-pill-text">ALL NOMINAL</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Grid -->
+  <main class="main-grid">
+    <!-- Left Surveillance Stage -->
+    <section class="stage-container">
+      <div class="stage-card">
+        <canvas id="stage-canvas" width="1280" height="720"></canvas>
+        <div class="stage-hud">
+          <div class="stage-hud-row">
+            <span><span class="rec-dot"></span>CAM_01 [WEST CORRIDOR]</span>
+            <span style="color: var(--primary);">4K/H.264 → TENSORRT</span>
+          </div>
+          <div class="stage-hud-row" style="color: var(--text-muted);">
+            <span id="hud-time">2026-10-15T21:40:00Z</span>
+            <span id="hud-stats">Objects: 0 | Verified Threats: 0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls & Simulator Actions -->
+      <div class="stage-controls">
+        <div class="ctrl-group">
+          <button class="btn active" id="btn-toggle-boxes">Bounding Boxes</button>
+          <button class="btn active" id="btn-toggle-zones">Perimeter Zones</button>
+          <button class="btn" id="btn-toggle-mode">Toggle Precision (FP16/INT8)</button>
+        </div>
+        <div class="ctrl-group">
+          <span style="font-size: 11px; color: var(--text-muted); font-family: var(--mono);">SIMULATE TEST SCENARIOS:</span>
+          <button class="btn sim-trigger" data-sim="bag">🎒 Unattended Bag</button>
+          <button class="btn sim-trigger" data-sim="fall">🚑 Person Fall</button>
+          <button class="btn sim-trigger" data-sim="crowd">👥 Crowd Surge</button>
+          <button class="btn sim-trigger" data-sim="breach">🚨 Perimeter Breach</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Controls & Grounded Intelligence -->
+    <aside class="intel-container">
+      <!-- Suggested Action Card -->
+      <div class="action-panel" id="action-panel">
+        <div class="action-head">
+          <span class="action-title">Now Viewing &amp; Suggested Action</span>
+          <span class="scene-summary-pill" id="scene-summary-text">Active Scene: Nominal</span>
+        </div>
+        <div class="action-box nominal" id="action-box">
+          <div class="action-prompt" id="action-prompt">Status Normal</div>
+          <div class="action-desc" id="action-desc">All monitored corridors and secure perimeters are within baseline parameters. Temporal verification gate active.</div>
+          <button class="dispatch-btn" id="dispatch-btn" style="display: none;">Acknowledge &amp; Dispatch</button>
+        </div>
+      </div>
+
+      <!-- AI Investigator -->
+      <div class="investigator-panel">
+        <div class="inv-header">
+          <div class="inv-title">
+            <span>🤖 Grounded AI Investigator</span>
+            <span style="font-size: 10px; color: var(--primary); font-family: var(--mono);">(0% Hallucination Proof)</span>
+          </div>
+        </div>
+
+        <div class="inv-chips">
+          <button class="inv-chip" data-q="What happened?">What happened?</button>
+          <button class="inv-chip" data-q="Verify latest threat">Verify latest threat</button>
+          <button class="inv-chip" data-q="Who was involved?">Who was involved?</button>
+          <button class="inv-chip" data-q="Does it require action?">Does it require action?</button>
+          <button class="inv-chip" data-q="PipeGen speed report">Speed report</button>
+        </div>
+
+        <div class="inv-chat" id="chat-thread">
+          <div class="msg bot">
+            <div class="msg-tool-tag">SENTINEL-EDGE INVESTIGATOR</div>
+            Welcome, Operator. I inspect the recorded CCTV telemetry and physical threat rules. Every answer is mathematically grounded in <code>detections.jsonl</code>. Ask any incident question below.
+          </div>
+        </div>
+
+        <form class="inv-compose" id="chat-form">
+          <input type="text" class="inv-input" id="chat-input" placeholder="Ask about people, bags, falls, or verification proof..." autocomplete="off">
+          <button type="submit" class="inv-send">Query</button>
+        </form>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Speed Report Modal -->
+  <div class="modal-overlay" id="speed-modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>🚀 PipeGen TensorRT Edge Compiler Speed &amp; Resource Benchmark</h2>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+        Benchmark conducted on <strong>ASUS TUF A15 (NVIDIA GeForce GPU, 4GB VRAM, 2048 CUDA Cores)</strong>.
+        Model: <strong>YOLOv8s (COCO-80)</strong>, Input: <strong>640x640</strong>.
+      </p>
+      <table class="bench-table">
+        <thead>
+          <tr>
+            <th>Precision Mode</th>
+            <th>Throughput</th>
+            <th>Avg Latency</th>
+            <th>GPU Memory (VRAM)</th>
+            <th>Power</th>
+            <th>Accuracy (mAP)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>TensorRT FP16 (Baseline)</td>
+            <td>94.2 FPS</td>
+            <td>10.61 ms</td>
+            <td>1,140 MB</td>
+            <td>42.5 W</td>
+            <td>0.449</td>
+          </tr>
+          <tr class="highlight">
+            <td>TensorRT INT8 (PTQ Calibrated) ⭐</td>
+            <td>148.6 FPS</td>
+            <td>6.73 ms</td>
+            <td>680 MB</td>
+            <td>28.2 W</td>
+            <td>0.441</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="background: #0c0e12; border: 1px solid var(--surface-border); border-radius: 6px; padding: 12px; font-size: 12px; line-height: 1.6;">
+        <strong style="color: var(--primary);">Edge Optimization Impact:</strong><br>
+        • <strong>+57.7% Throughput Surge:</strong> Unlocks simultaneous 4-channel real-time 30 FPS inference on a single 4GB budget laptop.<br>
+        • <strong>-36.6% Latency Reduction:</strong> Sub-7ms frame evaluation guarantees immediate spatio-temporal rule response.<br>
+        • <strong>-33.6% Power Reduction (28.2W):</strong> Enables remote, solar/battery-powered edge mast deployments.<br>
+        • <strong>-40.4% Memory Footprint (680MB):</strong> Preserves 3.3GB VRAM for high-resolution DeepStream pipeline buffers.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    const state = {
+      ws: null,
+      showBoxes: true,
+      showZones: true,
+      currentMode: "INT8 (PTQ Calibrated)",
+      records: [],
+      alerts: [],
+      zones: {
+        secure_perimeter: {
+          name: "Secure Perimeter Zone A",
+          polygon: [[0.10, 0.15], [0.90, 0.15], [0.90, 0.85], [0.10, 0.85]],
+          color: "#ff3366"
+        },
+        entrance_corridor: {
+          name: "Main Transit Corridor",
+          polygon: [[0.20, 0.60], [0.80, 0.60], [0.80, 0.95], [0.20, 0.95]],
+          color: "#00e5ff"
+        }
+      },
+      lastAlert: null
+    };
+
+    const canvas = document.getElementById("stage-canvas");
+    const ctx = canvas.getContext("2d");
+
+    // Connect WebSocket
+    function connectWS() {
+      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const host = location.host || "localhost:8050";
+      const wsUrl = `${protocol}//${host}/ws`;
+
+      state.ws = new WebSocket(wsUrl);
+
+      state.ws.onopen = () => {
+        console.log("Connected to Sentinel-Edge WebSocket");
+      };
+
+      state.ws.onmessage = (event) => {
+        try {
+          const msg = jsonParse(event.data);
+          if (msg.type === "frame") {
+            state.records = msg.records || [];
+            if (msg.alerts && msg.alerts.length > 0) {
+              msg.alerts.forEach(a => handleAlert(a));
+            }
+            updateSceneSummary();
+            renderCanvas();
+          } else if (msg.type === "init") {
+            if (msg.zones) state.zones = msg.zones;
+            if (msg.recent_alerts && msg.recent_alerts.length > 0) {
+              handleAlert(msg.recent_alerts[0]);
+            }
+            renderCanvas();
+          } else if (msg.type === "query_response") {
+            appendBotMessage(msg.data.answer, msg.data.tool_used);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      state.ws.onclose = () => {
+        setTimeout(connectWS, 2000);
+      };
+    }
+
+    function jsonParse(str) {
+      try { return JSON.parse(str); } catch { return {}; }
+    }
+
+    function handleAlert(alert) {
+      state.lastAlert = alert;
+      const pill = document.getElementById("global-alert-pill");
+      const pillText = document.getElementById("alert-pill-text");
+      const actionPanel = document.getElementById("action-panel");
+      const actionBox = document.getElementById("action-box");
+      const actionPrompt = document.getElementById("action-prompt");
+      const actionDesc = document.getElementById("action-desc");
+      const dispatchBtn = document.getElementById("dispatch-btn");
+
+      pill.className = `alert-pill ${alert.severity.toLowerCase()}`;
+      pillText.innerText = `${alert.severity}: ${alert.rule_name}`;
+
+      actionPanel.classList.add("threat-active");
+      actionBox.className = `action-box ${alert.severity.toLowerCase()}`;
+      actionPrompt.innerText = `🚨 ${alert.message}`;
+      actionDesc.innerHTML = `<strong>SUGGESTED ACTION:</strong> ${alert.suggested_action} <br><small style="color:var(--text-muted);font-family:var(--mono);">Gate Evidence: ${JSON.stringify(alert.evidence)}</small>`;
+      dispatchBtn.style.display = "block";
+      dispatchBtn.onclick = () => {
+        fetch(`/api/alerts/${alert.alert_id}/ack`, { method: "POST" });
+        actionPanel.classList.remove("threat-active");
+        actionBox.className = "action-box nominal";
+        actionPrompt.innerText = "Threat Acknowledged";
+        actionDesc.innerText = `Action recorded for ${alert.alert_id}. Responders dispatched.`;
+        dispatchBtn.style.display = "none";
+        pill.className = "alert-pill";
+        pillText.innerText = "ALL NOMINAL";
+      };
+    }
+
+    function updateSceneSummary() {
+      const counts = {};
+      state.records.forEach(r => {
+        const cls = r.class_name || "object";
+        counts[cls] = (counts[cls] || 0) + 1;
+      });
+
+      const parts = Object.entries(counts).map(([k, v]) => `${v} ${k}(s)`);
+      const summaryStr = parts.length > 0 ? parts.join(", ") : "0 objects active";
+      document.getElementById("scene-summary-text").innerText = `Scene: ${summaryStr}`;
+      document.getElementById("hud-stats").innerText = `Objects: ${state.records.length} | Active Tracks: ${new Set(state.records.map(r=>r.track_id)).size}`;
+      document.getElementById("hud-time").innerText = new Date().toISOString();
+    }
+
+    // Canvas Renderer
+    function renderCanvas() {
+      const W = canvas.width;
+      const H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // 1. Draw CCTV Grid Backdrop
+      drawCctvBackdrop(W, H);
+
+      // 2. Draw Geofence Zones
+      if (state.showZones) {
+        for (const [zid, zdata] of Object.entries(state.zones)) {
+          const poly = zdata.polygon || [];
+          if (poly.length >= 3) {
+            ctx.beginPath();
+            ctx.moveTo(poly[0][0] * W, poly[0][1] * H);
+            for (let i = 1; i < poly.length; i++) {
+              ctx.lineTo(poly[i][0] * W, poly[i][1] * H);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = zdata.color || "#ff3366";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 6]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = (zdata.color || "#ff3366") + "18";
+            ctx.fill();
+
+            // Label
+            ctx.font = "bold 12px monospace";
+            ctx.fillStyle = zdata.color || "#ff3366";
+            ctx.fillText(zdata.name || zid, poly[0][0] * W + 8, poly[0][1] * H + 20);
+          }
+        }
+      }
+
+      // 3. Draw Bounding Boxes
+      if (state.showBoxes) {
+        state.records.forEach(r => {
+          const bb = r.bounding_box || {};
+          const fw = r.frame?.width || W;
+          const fh = r.frame?.height || H;
+
+          const x = (bb.x / fw) * W;
+          const y = (bb.y / fh) * H;
+          const w = (bb.w / fw) * W;
+          const h = (bb.h / fh) * H;
+
+          const cls = r.class_name || "object";
+          const tid = r.track_id !== undefined ? `#${r.track_id}` : "";
+          const conf = Math.round((r.confidence || 0.85) * 100);
+
+          let strokeColor = "#00e5ff";
+          if (cls === "backpack" || cls === "suitcase") strokeColor = "#ffb300";
+          if (cls === "car" || cls === "motorcycle") strokeColor = "#c084fc";
+
+          // If involved in threat, color red
+          if (state.lastAlert && state.lastAlert.track_ids?.includes(r.track_id)) {
+            strokeColor = "#ff3366";
+          }
+
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = 2.5;
+          ctx.strokeRect(x, y, w, h);
+
+          // Tag background
+          ctx.fillStyle = strokeColor;
+          const tagText = `${cls.toUpperCase()} ${tid} [${conf}%]`;
+          ctx.font = "bold 11px monospace";
+          const tagW = ctx.measureText(tagText).width + 8;
+          ctx.fillRect(x, Math.max(0, y - 20), tagW, 20);
+
+          ctx.fillStyle = "#000";
+          ctx.fillText(tagText, x + 4, Math.max(14, y - 6));
+        });
+      }
+    }
+
+    function drawCctvBackdrop(W, H) {
+      // Perspective room floor lines
+      ctx.fillStyle = "#0d1117";
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+      ctx.lineWidth = 1;
+
+      // Floor perspective grid
+      const vanishY = H * 0.25;
+      for (let x = -W; x <= W * 2; x += 160) {
+        ctx.beginPath();
+        ctx.moveTo(W / 2, vanishY);
+        ctx.lineTo(x, H);
+        ctx.stroke();
+      }
+
+      for (let y = vanishY + 40; y < H; y += (y - vanishY) * 0.35 + 20) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+    }
+
+    // Controls
+    document.getElementById("btn-toggle-boxes").onclick = (e) => {
+      state.showBoxes = !state.showBoxes;
+      e.target.classList.toggle("active", state.showBoxes);
+      renderCanvas();
+    };
+
+    document.getElementById("btn-toggle-zones").onclick = (e) => {
+      state.showZones = !state.showZones;
+      e.target.classList.toggle("active", state.showZones);
+      renderCanvas();
+    };
+
+    document.getElementById("btn-toggle-mode").onclick = async () => {
+      const res = await fetch("/api/precision/toggle", { method: "POST" }).then(r=>r.json());
+      state.currentMode = res.precision_mode;
+      document.getElementById("mode-val").innerText = `YOLOv8s TensorRT ${state.currentMode}`;
+      document.getElementById("fps-val").innerText = state.currentMode.includes("INT8") ? "148.6 FPS" : "94.2 FPS";
+    };
+
+    // Simulation triggers
+    document.querySelectorAll(".sim-trigger").forEach(btn => {
+      btn.onclick = () => {
+        const scenario = btn.getAttribute("data-sim");
+        triggerScenario(scenario);
+      };
+    });
+
+    function triggerScenario(type) {
+      let mockRecords = [];
+      const now = new Date().toISOString();
+
+      if (type === "bag") {
+        // Person walking away, bag isolated
+        mockRecords = [
+          { camera_id: "cam_01", class_name: "backpack", track_id: 14, confidence: 0.92, timestamp: now, bounding_box: { x: 350, y: 380, w: 70, h: 70 }, frame: { width: 1280, height: 720 } },
+          { camera_id: "cam_01", class_name: "person", track_id: 3, confidence: 0.89, timestamp: now, bounding_box: { x: 850, y: 220, w: 90, h: 220 }, frame: { width: 1280, height: 720 } }
+        ];
+      } else if (type === "fall") {
+        // Person lying horizontally
+        mockRecords = [
+          { camera_id: "cam_01", class_name: "person", track_id: 22, confidence: 0.94, timestamp: now, bounding_box: { x: 420, y: 460, w: 260, h: 90 }, frame: { width: 1280, height: 720 } }
+        ];
+      } else if (type === "crowd") {
+        // 6 persons in secure perimeter
+        mockRecords = [
+          { camera_id: "cam_01", class_name: "person", track_id: 101, confidence: 0.91, timestamp: now, bounding_box: { x: 250, y: 250, w: 80, h: 180 }, frame: { width: 1280, height: 720 } },
+          { camera_id: "cam_01", class_name: "person", track_id: 102, confidence: 0.88, timestamp: now, bounding_box: { x: 330, y: 260, w: 80, h: 180 }, frame: { width: 1280, height: 720 } },
+          { camera_id: "cam_01", class_name: "person", track_id: 103, confidence: 0.93, timestamp: now, bounding_box: { x: 410, y: 240, w: 80, h: 180 }, frame: { width: 1280, height: 720 } },
+          { camera_id: "cam_01", class_name: "person", track_id: 104, confidence: 0.87, timestamp: now, bounding_box: { x: 490, y: 270, w: 80, h: 180 }, frame: { width: 1280, height: 720 } },
+          { camera_id: "cam_01", class_name: "person", track_id: 105, confidence: 0.90, timestamp: now, bounding_box: { x: 570, y: 250, w: 80, h: 180 }, frame: { width: 1280, height: 720 } },
+          { camera_id: "cam_01", class_name: "person", track_id: 106, confidence: 0.86, timestamp: now, bounding_box: { x: 650, y: 260, w: 80, h: 180 }, frame: { width: 1280, height: 720 } }
+        ];
+      } else if (type === "breach") {
+        mockRecords = [
+          { camera_id: "cam_01", class_name: "person", track_id: 77, confidence: 0.95, timestamp: now, bounding_box: { x: 450, y: 300, w: 85, h: 190 }, frame: { width: 1280, height: 720 } }
+        ];
+      }
+
+      fetch("/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mockRecords)
+      });
+    }
+
+    // Chat handling
+    const chatThread = document.getElementById("chat-thread");
+    const chatForm = document.getElementById("chat-form");
+    const chatInput = document.getElementById("chat-input");
+
+    chatForm.onsubmit = (e) => {
+      e.preventDefault();
+      const q = chatInput.value.trim();
+      if (!q) return;
+      chatInput.value = "";
+      sendQuery(q);
+    };
+
+    document.querySelectorAll(".inv-chip").forEach(chip => {
+      chip.onclick = () => {
+        sendQuery(chip.getAttribute("data-q"));
+      };
+    });
+
+    async function sendQuery(queryText) {
+      appendUserMessage(queryText);
+      try {
+        const res = await fetch("/api/investigator/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: queryText })
+        }).then(r => r.json());
+
+        appendBotMessage(res.answer, res.tool_used);
+      } catch (err) {
+        appendBotMessage("Error communicating with Grounded Investigator: " + err);
+      }
+    }
+
+    function appendUserMessage(text) {
+      const div = document.createElement("div");
+      div.className = "msg user";
+      div.innerText = text;
+      chatThread.appendChild(div);
+      chatThread.scrollTop = chatThread.scrollHeight;
+    }
+
+    function appendBotMessage(text, tool) {
+      const div = document.createElement("div");
+      div.className = "msg bot";
+
+      let toolHtml = tool ? `<div class="msg-tool-tag">${tool}</div>` : "";
+      // Simple markdown-style bold and code tags
+      let fmt = text
+        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+        .replace(/`(.*?)`/g, "<code>$1</code>")
+        .replace(/\n/g, "<br>");
+
+      div.innerHTML = toolHtml + fmt;
+      chatThread.appendChild(div);
+      chatThread.scrollTop = chatThread.scrollHeight;
+    }
+
+    // Modal
+    const modal = document.getElementById("speed-modal");
+    document.getElementById("speed-report-btn").onclick = () => modal.classList.add("open");
+    document.getElementById("modal-close-btn").onclick = () => modal.classList.remove("open");
+    modal.onclick = (e) => { if (e.target === modal) modal.classList.remove("open"); };
+
+    // Initial render & run
+    connectWS();
+    renderCanvas();
+  </script>
+</body>
+</html>

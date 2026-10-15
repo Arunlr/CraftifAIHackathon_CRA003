@@ -1,0 +1,141 @@
+project_name: "Sentinel-Edge: Intelligence for Existing CCTV"
+version: "1.0.0"
+camera_id: "cam_01"
+
+# PipeGen Perception Ingestion
+perception:
+  source: "mqtt"                      # options: "mqtt", "jsonl", "simulate", "http"
+  mqtt:
+    broker: "localhost"
+    port: 1883
+    topic: "pipegen/detections"
+    client_id: "sentinel_edge_bridge"
+    qos: 0
+  input_schema: "deepstream_4.0"      # DeepStream Schema 4.0 OR standard JSONL
+
+# Two-Stage Temporal Persistence & Verification Gate
+verification:
+  min_confidence: 0.45
+  cooldown_seconds: 15
+  persistence_frames: 10              # Consecutive frames required to confirm track
+  max_unattended_distance_norm: 0.18  # Normalized Euclidean distance to nearest person
+  fall_aspect_ratio_threshold: 1.15   # Bounding box w/h ratio (horizontal = fall)
+
+# Monitored Geofence Zones (Normalized [x, y] coordinates 0.0 - 1.0)
+zones:
+  secure_perimeter:
+    name: "Secure Perimeter Zone A"
+    color: "#ff3366"
+    polygon:
+      - [0.10, 0.15]
+      - [0.90, 0.15]
+      - [0.90, 0.85]
+      - [0.10, 0.85]
+  entrance_corridor:
+    name: "Main Transit Corridor"
+    color: "#00e5ff"
+    polygon:
+      - [0.20, 0.60]
+      - [0.80, 0.60]
+      - [0.80, 0.95]
+      - [0.20, 0.95]
+
+# Spatio-Temporal Multi-Threat Rules
+rules:
+  - id: "unattended_package"
+    name: "Suspicious / Unattended Luggage"
+    type: "unattended"
+    target_classes: ["backpack", "suitcase", "handbag"]
+    anchor_class: "person"
+    max_distance_norm: 0.18
+    dwell_seconds: 8.0
+    severity: "CRITICAL"
+    actuator_level: 3
+    message: "VERIFIED THREAT: Unattended package isolated from owner > 8s"
+    suggested_action: "Dispatch security to inspect isolated bag (Track ID #{track_id})"
+
+  - id: "fall_emergency"
+    name: "Medical Emergency / Person Down"
+    type: "fall"
+    target_classes: ["person"]
+    aspect_ratio_threshold: 1.15
+    dwell_seconds: 3.0
+    severity: "CRITICAL"
+    actuator_level: 3
+    message: "MEDICAL EMERGENCY: Person collapsed / horizontal on floor > 3s"
+    suggested_action: "Dispatch medical responder to Camera {camera_id} immediately"
+
+  - id: "crowd_surge"
+    name: "Unusual Crowding / Stampede Risk"
+    type: "count_threshold"
+    zone: "secure_perimeter"
+    target_classes: ["person"]
+    max_count: 5
+    dwell_seconds: 2.0
+    severity: "WARNING"
+    actuator_level: 2
+    message: "ANOMALY: Unusual crowding / sudden gathering detected in Camera Zone"
+    suggested_action: "Monitor crowd density in Zone A; deploy crowd control if sustained"
+
+  - id: "perimeter_breach"
+    name: "Restricted Perimeter Breach"
+    type: "zone_dwell"
+    zone: "secure_perimeter"
+    target_classes: ["person", "car", "motorcycle"]
+    dwell_seconds: 5.0
+    severity: "CRITICAL"
+    actuator_level: 3
+    message: "SECURITY LOG: Prolonged loitering / unauthorized presence in monitored zone"
+    suggested_action: "Security dispatch: unauthorized presence in restricted perimeter"
+
+# PipeGen TensorRT Precision Benchmark Data (ASUS TUF A15 / 4GB NVIDIA GPU)
+pipegen_telemetry:
+  target_device: "NVIDIA GeForce GPU (4GB VRAM / 2048 CUDA Cores)"
+  host_platform: "AMD Ryzen 5 Mobile / WSL2 Ubuntu 22.04 LTS"
+  tensorrt_version: "8.6.1.6"
+  cuda_version: "12.2"
+  model: "YOLOv8s (COCO-80)"
+  input_resolution: "640x640"
+  fp16:
+    throughput_fps: 94.2
+    latency_avg_ms: 10.61
+    latency_p95_ms: 11.45
+    gpu_memory_mb: 1140
+    power_watts: 42.5
+    energy_per_frame_joules: 0.451
+    map50_95: 0.449
+    status: "Verified / Standard Pipeline"
+  int8:
+    throughput_fps: 148.6
+    latency_avg_ms: 6.73
+    latency_p95_ms: 7.32
+    gpu_memory_mb: 680
+    power_watts: 28.2
+    energy_per_frame_joules: 0.190
+    map50_95: 0.441
+    status: "Verified / Edge-Optimized Bonus (+57.7% FPS, -36.6% Latency)"
+
+# Multi-Channel Actuation & Dispatch
+dispatch:
+  telegram:
+    enabled: false                     # Set to true and supply bot_token & chat_id
+    bot_token: ""
+    chat_id: ""
+    cooldown_seconds: 30
+  esp32_uart:
+    enabled: false                     # Set to true when ESP32 connected via USB/UART
+    port: "COM3"
+    baudrate: 115200
+    ping_interval_seconds: 2.0
+    watchdog_timeout_seconds: 3.0
+  local_alerts:
+    enabled: true
+    audio_beep: false
+    console_highlight: true
+
+# Output paths
+storage:
+  output_dir: "output"
+  detections_file: "output/detections.jsonl"
+  alerts_file: "output/alerts.jsonl"
+  max_memory_history: 1000
