@@ -11,6 +11,7 @@ import io
 import json
 import mimetypes
 import os
+import re
 import sys
 import time
 import traceback
@@ -129,8 +130,24 @@ Zone should be "track_zone" if near track centre/ballast, else "approach_zone".
 threat_level should be "critical" (if on track), "warning" (if in approach), or "none".
 RESPOND ONLY WITH VALID JSON, nothing else."""
 
+    # Automatically downscale large frames to ~640px so uploads are fast (<50KB) and never time out
+    try:
+        raw_b = base64.b64decode(image_base64)
+        if len(raw_b) > 80000 and cv2 is not None and np is not None:
+            nparr = np.frombuffer(raw_b, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is not None:
+                ih, iw = img.shape[:2]
+                scale = min(640.0 / iw, 480.0 / ih, 1.0)
+                if scale < 1.0:
+                    img = cv2.resize(img, (int(iw * scale), int(ih * scale)))
+                _, enc = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                image_base64 = base64.b64encode(enc.tobytes()).decode("utf-8")
+    except Exception:
+        pass
+
     payload = {
-        "model": "google/gemini-2.0-flash-001",
+        "model": "google/gemini-2.5-flash",
         "messages": [
             {
                 "role": "user",
@@ -145,8 +162,9 @@ RESPOND ONLY WITH VALID JSON, nothing else."""
                 ]
             }
         ],
-        "max_tokens": 500,
-        "temperature": 0.1
+        "max_tokens": 1500,
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"}
     }
 
     try:
@@ -156,16 +174,12 @@ RESPOND ONLY WITH VALID JSON, nothing else."""
             headers=headers,
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=12) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             raw = data["choices"][0]["message"]["content"].strip()
-            if raw.startswith("```"):
-                raw = raw.split(chr(10), 1)[1] if chr(10) in raw else raw[3:]
-                if raw.endswith("```"):
-                    raw = raw[:-3]
-                raw = raw.strip()
-                if raw.startswith("json"):
-                    raw = raw[4:].strip()
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if m:
+                raw = m.group(0)
             return json.loads(raw)
     except Exception as e:
         print(f"[Vision API] Detection error: {e}", flush=True)
@@ -3360,16 +3374,19 @@ def main():
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def _send(self, code, body, ctype, extra_headers=None):
-            self.send_response(code)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            if extra_headers:
-                for k, v in extra_headers.items():
-                    self.send_header(k, v)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                if extra_headers:
+                    for k, v in extra_headers.items():
+                        self.send_header(k, v)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+                pass
 
         def do_OPTIONS(self):
             self.send_response(200)
@@ -3392,6 +3409,36 @@ def main():
                         return
                     raw_bytes = base64.b64decode(b64)
                     res = run_local_yolo_on_frame(raw_bytes)
+                    # If local YOLO spotted nothing, try multimodal OpenRouter VLM fallback for low-light/silhouettes
+                    if res.get("count", 0) == 0 and OPENROUTER_API_KEY:
+                        try:
+                            vlm_res = analyze_frame_with_openrouter(b64)
+                            if vlm_res and "detections" in vlm_res and len(vlm_res["detections"]) > 0:
+                                formatted = []
+                                for idx, d in enumerate(vlm_res["detections"]):
+                                    bbox = d.get("bbox", [20, 50, 45, 80])
+                                    if any(coord > 1.0 for coord in bbox):
+                                        bbox = [round(coord / 100.0, 4) for coord in bbox]
+                                    lbl = d.get("label", "elephant")
+                                    zone = d.get("zone", "track_zone" if bbox[3] >= 0.50 else "approach_zone")
+                                    formatted.append({
+                                        "id": idx + 1,
+                                        "label": lbl,
+                                        "conf": round(float(d.get("confidence", 0.92)), 2),
+                                        "box": bbox,
+                                        "zone": zone
+                                    })
+                                has_track = any(o["zone"] == "track_zone" for o in formatted)
+                                threat = "critical" if has_track else "warning"
+                                res = {
+                                    "status": "ok",
+                                    "count": len(formatted),
+                                    "threat_level": threat,
+                                    "detections": formatted,
+                                    "engine": "OpenRouter-Gemini-VLM"
+                                }
+                        except Exception:
+                            pass
                     self._send(200, json.dumps(res).encode("utf-8"), "application/json")
                 except Exception as e:
                     self._send(500, json.dumps({"error": str(e), "detections": []}).encode("utf-8"), "application/json")
@@ -3471,10 +3518,32 @@ def main():
                     if not b64:
                         self._send(400, b'{"error":"No frame"}', "application/json")
                         return
-                    res = analyze_frame_with_openrouter(b64)
+                    # Try local YOLO first for instant <25ms response, fallback to OpenRouter VLM
+                    raw_bytes = base64.b64decode(b64)
+                    yolo_res = run_local_yolo_on_frame(raw_bytes)
+                    if yolo_res.get("count", 0) > 0 and not OPENROUTER_API_KEY:
+                        dets = []
+                        for o in yolo_res.get("detections", []):
+                            b = [round(c * 100, 1) for c in o["box"]]
+                            dets.append({
+                                "label": o["label"],
+                                "confidence": o["conf"],
+                                "bbox": b,
+                                "zone": o["zone"],
+                                "description": f"{o['label'].capitalize()} detected in {o['zone']}"
+                            })
+                        res = {
+                            "detections": dets,
+                            "threat_level": yolo_res.get("threat_level", "clear"),
+                            "speed_advisory": 0 if yolo_res.get("threat_level") == "critical" else (30 if yolo_res.get("threat_level") == "warning" else 80),
+                            "advisory": "ELEPHANT ON TRACK - STOP trains" if yolo_res.get("threat_level") == "critical" else "Wildlife in approach corridor - Decelerate"
+                        }
+                    else:
+                        res = analyze_frame_with_openrouter(b64)
                     self._send(200, json.dumps(res).encode("utf-8"), "application/json")
                 except Exception as e:
                     self._send(500, json.dumps({"error": str(e), "detections": []}).encode("utf-8"), "application/json")
+                return
             else:
                 self._send(404, b"not found", "text/plain")
 
