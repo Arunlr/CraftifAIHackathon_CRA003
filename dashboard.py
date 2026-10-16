@@ -2838,14 +2838,13 @@ function getDetectionsAtTime(t) {
 function setActuatorStateUI(level, state, msg) {
   const master = $("actMasterCard");
   const badge = $("actBadge");
-  const stateEl = $("actState");
+  const actLvl = $("actLevel");
   const msgEl = $("actMsg");
-  const actIcon = $("actIcon");
 
   if (level === 3) {
     if (master) master.className = "card actuator-card state-3";
     if (badge) { badge.className = "badge-pill badge-crit"; badge.textContent = "LEVEL 3 · CRITICAL STOP"; }
-    if (stateEl) stateEl.textContent = state;
+    if (actLvl) actLvl.textContent = "LEVEL 3: CRITICAL STOP TRIPPED";
     if (msgEl) msgEl.textContent = msg;
     setToggle("swSiren", "lblSiren", true, "ACTIVE 85dB", true);
     setToggle("swStrobe", "lblStrobe", true, "FLASH 4Hz", true);
@@ -2853,7 +2852,7 @@ function setActuatorStateUI(level, state, msg) {
   } else if (level === 2) {
     if (master) master.className = "card actuator-card state-2";
     if (badge) { badge.className = "badge-pill badge-warn"; badge.textContent = "LEVEL 2 · APPROACH WARNING"; }
-    if (stateEl) stateEl.textContent = state;
+    if (actLvl) actLvl.textContent = "LEVEL 2: APPROACH WARNING";
     if (msgEl) msgEl.textContent = msg;
     setToggle("swSiren", "lblSiren", true, "PRE-WARN", false);
     setToggle("swStrobe", "lblStrobe", true, "AMBER", false);
@@ -2861,7 +2860,7 @@ function setActuatorStateUI(level, state, msg) {
   } else {
     if (master) master.className = "card actuator-card state-0";
     if (badge) { badge.className = "badge-pill badge-clear"; badge.textContent = "LEVEL 0 · ALL CLEAR"; }
-    if (stateEl) stateEl.textContent = "ALL CLEAR";
+    if (actLvl) actLvl.textContent = "LEVEL 0: ALL CLEAR";
     if (msgEl) msgEl.textContent = msg;
     setToggle("swSiren", "lblSiren", false, "STANDBY", false);
     setToggle("swStrobe", "lblStrobe", false, "OFF", false);
@@ -2971,22 +2970,11 @@ function drawHud(tracks) {
     ctx.fillStyle = "rgba(16, 185, 129, 0.04)";
     ctx.fillRect(oX, appTop, rW, appH);
 
-    ctx.strokeStyle = "rgba(16, 185, 129, 0.40)";
+    ctx.strokeStyle = "rgba(16, 185, 129, 0.45)";
     ctx.lineWidth = 1.0;
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(oX + 1, appTop, rW - 2, appH);
     ctx.setLineDash([]);
-
-    // Right-pinned compact badge (leaves railway center 100% unobstructed)
-    const appBadge = "ZONE: APPROACH BUFFER · 30 KM/H";
-    ctx.font = "600 8.5px 'JetBrains Mono', monospace";
-    const appW = ctx.measureText(appBadge).width;
-    ctx.fillStyle = "rgba(6, 11, 24, 0.75)";
-    ctx.fillRect(oX + rW - appW - 16, appTop + 4, appW + 10, 15);
-    ctx.strokeStyle = "rgba(16, 185, 129, 0.55)";
-    ctx.strokeRect(oX + rW - appW - 16, appTop + 4, appW + 10, 15);
-    ctx.fillStyle = "#34d399";
-    ctx.fillText(appBadge, oX + rW - appW - 11, appTop + 14);
 
     // Track Danger Zone: Ballast & Rails
     const trkTop = oY + rH * 0.52;
@@ -2994,22 +2982,11 @@ function drawHud(tracks) {
     ctx.fillStyle = "rgba(239, 68, 68, 0.05)";
     ctx.fillRect(oX, trkTop, rW, trkH);
 
-    ctx.strokeStyle = "rgba(239, 68, 68, 0.50)";
+    ctx.strokeStyle = "rgba(239, 68, 68, 0.55)";
     ctx.lineWidth = 1.0;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(oX + 1, trkTop, rW - 2, trkH);
     ctx.setLineDash([]);
-
-    // Right-pinned compact danger badge
-    const trkBadge = "ZONE: TRACK DANGER ZONE · 0 KM/H HALT";
-    ctx.font = "600 8.5px 'JetBrains Mono', monospace";
-    const trkW = ctx.measureText(trkBadge).width;
-    ctx.fillStyle = "rgba(6, 11, 24, 0.85)";
-    ctx.fillRect(oX + rW - trkW - 16, trkTop + 4, trkW + 10, 15);
-    ctx.strokeStyle = "rgba(239, 68, 68, 0.65)";
-    ctx.strokeRect(oX + rW - trkW - 16, trkTop + 4, trkW + 10, 15);
-    ctx.fillStyle = "#f87171";
-    ctx.fillText(trkBadge, oX + rW - trkW - 11, trkTop + 14);
   }
 
   // 2. Tactical Bounding Boxes with Modern Corner Reticles & Animal Badges
@@ -3047,14 +3024,15 @@ function drawHud(tracks) {
       // Frosted Header Badge with Animal Emoji
       const rawLbl = (t.label || "elephant").toLowerCase();
       const emoji = rawLbl.includes("elephant") ? "🐘" : (rawLbl.includes("cow") || rawLbl.includes("cattle") ? "🐄" : (rawLbl.includes("person") ? "👤" : "🐾"));
-      const tagText = `${emoji} ${rawLbl.toUpperCase()} #${t.id || (idx + 1)} · ${Math.round((t.conf || 0.94) * 100)}%`;
+      const zoneTag = isCritical ? " [TRACK STOP]" : "";
+      const tagText = `${emoji} ${rawLbl.toUpperCase()} #${t.id || (idx + 1)} · ${Math.round((t.conf || 0.94) * 100)}%${zoneTag}`;
       
       ctx.font = "bold 9px 'JetBrains Mono', monospace";
       const tagW = ctx.measureText(tagText).width;
       const tagH = 15;
       const tagY = Math.max(oY + 2, by - tagH - 2);
 
-      ctx.fillStyle = "rgba(6, 11, 24, 0.90)";
+      ctx.fillStyle = isCritical ? "rgba(220, 38, 38, 0.92)" : "rgba(6, 11, 24, 0.90)";
       ctx.fillRect(bx, tagY, tagW + 10, tagH);
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.0;
@@ -3062,17 +3040,6 @@ function drawHud(tracks) {
 
       ctx.fillStyle = "#ffffff";
       ctx.fillText(tagText, bx + 5, tagY + 11);
-
-      // Bottom sub-tag for Ballast Breach
-      if (isCritical) {
-        const critTag = "BALLAST BREACH (0 KM/H)";
-        ctx.font = "bold 8px 'JetBrains Mono', monospace";
-        const cW = ctx.measureText(critTag).width;
-        ctx.fillStyle = "rgba(220, 38, 38, 0.92)";
-        ctx.fillRect(bx, by + bh + 2, cW + 8, 14);
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(critTag, bx + 4, by + bh + 12);
-      }
     });
   }
 }
@@ -3675,6 +3642,10 @@ async function fetchState() {
     if (res.ok) {
       const data = await res.json();
       if (!data.waiting) {
+        if (videoEl && !videoEl.paused && currentTrackedObjects && currentTrackedObjects.length > 0) {
+          // Video detection loop is actively tracking and driving the safety interlock
+          return;
+        }
         if (simActive && simulatedState) {
           data.active_tracks = simulatedState.active_tracks;
           data.zones = simulatedState.zones;
