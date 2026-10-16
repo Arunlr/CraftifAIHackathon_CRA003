@@ -30,3 +30,8 @@ dist/
 .env
 *.tmp
 *.local
+scratch/
+webapp/media/
+webapp/evidence/
+webapp/pipegen_export/
+run/detections_*.json

@@ -221,6 +221,6 @@ CraftifAIHackathon_CRA002/
 ---
 
 ## 👥 Team & Acknowledgments
-- **Project Lead & Developer:** `Jokimpr`
+- **Project Lead & Developer:** `Arun`
 - **Track:** CraftifAI PipeGen Track (Physical AI Hackathon)
 - **Special Thanks:** CraftifAI team for PipeGen & FirmGen, and Tamil Nadu Forest Department / Southern Railways for pioneering the Madukkarai AI wildlife warning framework.
