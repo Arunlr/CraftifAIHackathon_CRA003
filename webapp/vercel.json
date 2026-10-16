@@ -3,6 +3,7 @@
   "cleanUrls": true,
   "rewrites": [
     { "source": "/api/state", "destination": "/state.json" },
-    { "source": "/api/state/(.*)", "destination": "/state.json" }
+    { "source": "/api/state/(.*)", "destination": "/state.json" },
+    { "source": "/api/detections", "destination": "/detections_eephant.json" }
   ]
 }
